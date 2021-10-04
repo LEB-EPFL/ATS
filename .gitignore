@@ -4,3 +4,4 @@ settings.json
 *.pylintrc
 tf2_4
 Tests
+*.code-workspace
