@@ -10,7 +10,8 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt5 import QtGui
 from PyQt5.QtCore import QRectF, QTimer, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QGridLayout, QInputDialog, QWidget
+from PyQt5.QtWidgets import (QApplication, QFileDialog, QGridLayout,
+                             QInputDialog, QWidget)
 from skimage import io
 
 from SmartMicro.QtImageViewerMerge import QtImageViewerMerge
@@ -20,12 +21,14 @@ def main():
     """ Method to test the Viewer in a QBoxLayout with 1 and 2 channels"""
     app = QApplication(sys.argv)
     viewer = QtImageViewerSeries()
-    fname = ('\\lebnas1.epfl.ch\microsc125\Watchdog\Model\Proc.h5')
+    fname = ('//lebnas1.epfl.ch/microsc125/Watchdog/Model/Mito.h5')
     # fname = ('W:/Watchdog/Model/Proc.h5')
     # fname = ('C:/Users/stepp/Documents/02_Raw/SmartMito/__short.tif')
     viewer.loadSeries(fname)
-    viewer.loadSeries(fname)
-    viewer.loadSeries(fname)
+    viewer.viewer.cross.hide()
+    viewer.viewer.crossRational.hide()
+    # viewer.loadSeries(fname)
+    # viewer.loadSeries(fname)
     viewer.show()
     sys.exit(app.exec_())
 
@@ -53,11 +56,21 @@ class QtImageViewerSeries(QWidget):
         self.timer.setInterval(20)
 
         self.series = None
+        self.lastKey = None
 
     def newSlider(self, event):
         """ ??? """
         print(self.region.getRegion())
         print(event)
+
+    def keyPressEvent(self, keyEvent: QtGui.QKeyEvent) -> None:
+        """ Save the current frame that is displayed if Ctrl+Save is pressed """
+        if self.lastKey == 16777249 and keyEvent.key() == 83:
+            fname, *_ = QFileDialog.getSaveFileName(QWidget(), 'Save file')
+            frame = int(self.slider.position)
+            io.imsave(fname, self.series[frame, :, :])
+        self.lastKey = keyEvent.key()
+        return super().keyPressEvent(keyEvent)
 
     def onTimer(self, i=None):
         """Set the current frame if timer is running. Also accesible programmatically to set a
@@ -68,8 +81,16 @@ class QtImageViewerSeries(QWidget):
         else:
             i = int(np.round(i))
         print(i)
-        for channel in range(self.series.shape[3]):
-            self.viewer.setImage(self.series[i, :, :, channel-1], channel-1)
+        if self.series.ndim == 4:
+            numChannels = self.series.shape[3]
+        else:
+            numChannels = 1
+
+        if numChannels == 1:
+            self.viewer.setImage(self.series[i, :, :], 0)
+        else:
+            for channel in range(numChannels):
+                self.viewer.setImage(self.series[i, :, :, channel-1], channel-1)
 
     def loadSeries(self, filePath):
         """ Load anything that skimage imread can load as a series or a .h5 file """
@@ -93,12 +114,14 @@ class QtImageViewerSeries(QWidget):
                 self.series = io.imread(filePath)
             else:
                 self.series = np.concatenate((self.series, io.imread(filePath)), axis=2)
-        self.viewer.addImage(self.series[0, :, :, self.series.shape[-1]-1])
+        if self.series.size == 4:
+            self.viewer.addImage(self.series[0, :, :, self.series.shape[-1]-1])
+        else:
+            self.viewer.addImage(self.series[:, :, self.series.shape[-1]-1])
         self.viewer.rangeChanged()
         self.viewer.resetRanges()
         self.slider.setSliderRange([-1, self.series.shape[0]-1])
         self.viewer.resetZoom()
-
 
     def startTimer(self):
         """ start Timer when slider is pressed """
@@ -289,7 +312,6 @@ class QNiceSlider(pg.GraphicsLayoutWidget):
         def mouseReleaseEvent(self, _):
             """ Transmit button release to the main slider class """
             self.buttonReleased.emit()
-
 
 
 if __name__ == '__main__':

@@ -24,11 +24,12 @@ import sys
 import numpy as np
 import PyQt5.QtCore as QtCore
 import pyqtgraph as pg
-from PyQt5 import QtGui
+from PyQt5 import QtGui, QtWidgets
 from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal, pyqtSlot
 from PyQt5.QtGui import QPainter, QPicture
-from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QMainWindow,
-                             QPushButton, QSlider, QWidget)
+from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QLabel,
+                             QMainWindow, QPushButton, QSizePolicy, QSlider,
+                             QWidget)
 from skimage import io
 
 
@@ -80,7 +81,7 @@ class QtImageViewerMerge(QMainWindow):  # GraphicsWindow):
     frameChanged = pyqtSignal([], [int])
     resizedEmitter = pyqtSignal([], [int])
 
-    def __init__(self):
+    def __init__(self, maxRange=1):
         QMainWindow.__init__(self)
         self.widget = QWidget()
         self.setCentralWidget(self.widget)
@@ -107,6 +108,7 @@ class QtImageViewerMerge(QMainWindow):  # GraphicsWindow):
         self.gridMenu.addWidget(self.menuButton, 0, 0, Qt.AlignTop)
         self.viewBox.sigRangeChanged.connect(self.rangeChanged)
 
+        self.maxRange = maxRange
         self.zValue = 0
         self.fullImages = []
         self.imageItems = []
@@ -164,7 +166,7 @@ class QtImageViewerMerge(QMainWindow):  # GraphicsWindow):
         """ reset Ranges when a new stack is loaded in by some GUI """
         for pos in range(self.numChannels):
             fullImageRange = [np.min(self.fullImages[pos]), np.max(self.fullImages[pos])]
-            maxImage = np.max([fullImageRange[1], 1])
+            maxImage = np.max([fullImageRange[1], self.maxRange])
             minImage = fullImageRange[0]
             self.saturationSliders[pos].viewBox.setYRange(-0.2*maxImage, maxImage*1.2)
             self.saturationSliders[pos].regions[0].setRegion((-0.1*maxImage, maxImage*1.1))
@@ -292,7 +294,7 @@ class GradientEditorWidget(pg.GraphicsView):
         pg.GraphicsView.__init__(self, *args, useOpenGL=False, background=background)
         self.item = pg.GradientEditorItem(*args, **kargs)
         self.setCentralItem(self.item)
-        self.setSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.setMaximumWidth(15)
         self.setMaximumHeight(150)
 
@@ -418,16 +420,16 @@ class LUTItemSimple(QWidget):
             brush = QtGui.QBrush(grad)
             painter.fillRect(QtCore.QRect(0, 0, 100, 15), brush)
             painter.end()
-            label = QtGui.QLabel()
+            label = QLabel()
             label.setPixmap(pixmap)
             label.setContentsMargins(1, 1, 1, 1)
-            labelName = QtGui.QLabel(gradient)
-            hbox = QtGui.QHBoxLayout()
+            labelName = QLabel(gradient)
+            hbox = QtWidgets.QHBoxLayout()
             hbox.addWidget(labelName)
             hbox.addWidget(label)
-            widget = QtGui.QWidget()
+            widget = QtWidgets.QWidget()
             widget.setLayout(hbox)
-            act = QtGui.QWidgetAction(self)
+            act = QtWidgets.QWidgetAction(self)
             act.setDefaultWidget(widget)
             act.triggered.connect(self.customLutClicked)
             act.name = gradient

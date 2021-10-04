@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+settings.json
+*.pylintrc
+tf2_4
+Tests

@@ -2,19 +2,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def violin_overlay(data_list: list, relative_list:list=None, spread:int=0.4):
+def violin_overlay(data_list: list, relative_list: list = None, spread: float = 0.4,
+                   bins: int = 20, vert: bool = True, params={}):
     if relative_list is None:
         relative_list = [True]*len(data_list)
 
     for index, (data, relative) in enumerate(zip(data_list, relative_list)):
-        alpha, x = get_violin_x(data, index+1, spread=spread, relativ_hist=relative)
-        plt.scatter(x, data, alpha=alpha, edgecolors='none')
+        alpha, x = get_violin_x(data, index+1, spread=spread, relativ_hist=relative,
+                                bins=bins)
+        if vert:
+            plt.scatter(x, data, **params)
+        else:
+            plt.scatter(data, x, **params)
 
 
-def get_violin_x(data, offset, spread=0.4, relativ_hist=True):
+def get_violin_x(data, offset, spread=0.4, relativ_hist=True, bins=20):
     x = []
 
-    hist_data, edges = np.histogram(data, bins=20)
+    hist_data, edges = np.histogram(data, bins=bins)
     hist_data_abs = hist_data
     if relativ_hist:
         hist_data = np.divide(hist_data,np.max(hist_data))

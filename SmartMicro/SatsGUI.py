@@ -19,49 +19,25 @@ from NNio import (loadElapsedTime, loadiSIMmetadata, loadNNData,
 QApplication.setAttribute(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 
 
-class RectItem(pg.GraphicsObject):
-    """ Rectangle that can be added to a pg.ViewBox """
-    def __init__(self, rect, color='#FFFFFF', parent=None):
-        super().__init__(parent)
-        self._rect = rect
-        self.color = color
-        self.picture = QtGui.QPicture()
-        self.generatePicture()
+def main():
+    "Presentation mode of the GUI that can be advanced by clicking the A button on the keyboard."
+    app = QApplication(sys.argv)
+    gui = SatsGUI()
+    # folder = ('W:/iSIMstorage/Users/Willi/180420_drp_mito_Dora/sample1/'
+    #           'sample1_cell_3_MMStack_Pos0_combine.ome_ATS')
+    folder = ("W:/iSIMstorage/Users/Dora/20201205_mitoSmart/sample3/"
+              "cell_Int0s_30pc_488_50pc_561_band_1")
 
-    @property
-    def rect(self):
-        """ return the original rectangle object given on initialization """
-        return self._rect
+    # ATSSimulation data
+    folder = ("W:/iSIMstorage/Users/Willi/180420_drp_mito_Dora/sample1/"
+              "sample1_cell_3_MMStack_Pos0_combine_ffmodel.ome_ATS")
 
-    def generatePicture(self):
-        """ generate the Picture of te Rectangle using a QPainter """
-        painter = QtGui.QPainter(self.picture)
-        painter.setPen(pg.mkPen(color=self.color))
-        painter.setBrush(pg.mkBrush(color=self.color))
-        painter.drawRect(self.rect)
-        painter.end()
+    gui.mode = 'Mito'
+    gui.loadData(folder)
+    # gui.loadData('W:/Watchdog/microM_test/201208_cell_Int0s_30pc_488_50pc_561_band_5')
+    gui.show()
 
-    def paint(self, *painter):
-        """ Not sure when this is called.
-        Might be called by the ViewBox the rectangle is added to """
-        painter[0].drawPicture(0, 0, self.picture)
-
-    def boundingRect(self):
-        """ return the QRectF bounding rectangle of the specified rectangle """
-        return QtCore.QRectF(self.picture.boundingRect())
-
-
-class KeyPressWindow(pg.PlotWidget):
-    """ pg.PlotWidget that catches a key press on the keyboard. Used in SatsGUI to advance the
-    GUI for presentation purposes """
-    sigKeyPress = QtCore.pyqtSignal(object)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def keyPressEvent(self, ev):
-        self.scene().keyPressEvent(ev)
-        self.sigKeyPress.emit(ev)
+    sys.exit(app.exec_())
 
 
 class SatsGUI(QWidget):
@@ -141,19 +117,21 @@ class SatsGUI(QWidget):
         self.rects = []
         self.lastKey = None
         self.timeUnit = 's'
+        self.mode = 'Mito'
 
     def loadData(self, folder, progress=None, app=None):
         """ load timing data using the methods in the nnIO module """
         self.elapsed = loadElapsedTime(folder, progress, app)
         self.elapsed.sort()
-        if self.elapsed[-1] < 10*60:
-            self.elapsed = np.array(self.elapsed[0::2])/1000
+
+        if (self.elapsed[-1]-self.elapsed[0]) < 10_000*60:
+            self.elapsed = np.array(self.elapsed)/1000
             self.timeUnit = 's'
-        elif self.elapsed[-1] < 120*60:
-            self.elapsed = np.array(self.elapsed[0::2])/1000/60
+        elif (self.elapsed[-1]-self.elapsed[0]) < 120_000*60:
+            self.elapsed = np.array(self.elapsed)/1000/60
             self.timeUnit = 'min'
         else:
-            self.elapsed = np.array(self.elapsed[0::2])/1000/60/60
+            self.elapsed = np.array(self.elapsed)/1000/60/60
             self.timeUnit = 'h'
         self.plot.setLabel('bottom', 'Time [{}]'.format(self.timeUnit))
         self.delay = loadiSIMmetadata(folder)
@@ -166,6 +144,9 @@ class SatsGUI(QWidget):
                                       np.max(self.rationalData)/nnDataRange)
         self.rationalData = self.rationalData + np.min(self.nnData[:, 1])
 
+        # readjust the limits to the data
+        self.plot.setYRange(min(self.nnData[:, 1]), max(self.nnData[:, 1]))
+
     def updatePlot(self):
         """ update the plot when the 'A' key is pressed and advance plot. This is skipped
         over in NNGui. """
@@ -177,16 +158,18 @@ class SatsGUI(QWidget):
             self.nnPlotItem.setData(x=self.elapsed, y=np.arange(0, len(self.elapsed)))
 
         elif self.inc == 2:
-            self.delay = np.append(np.ones(5), self.delay)
-            rectData = self.delay[5:len(self.elapsed)]
-            # rectData = np.append(rectData[0:-2], rectData[0])
-            # see where the delay value changes
-            # print(rectDataroll)
-            changes = np.where(np.roll(rectData, 1) != rectData)[0]
+
+            # if self.mode == 'bacteria':
+            changes = self.makeChanges(self.elapsed)
+            print(changes)
+            # else:
+            #     self.delay = np.append(np.ones(5), self.delay)
+            #     rectData = self.delay[5:len(self.elapsed)]
+            #     changes = np.where(np.roll(rectData, 1) != rectData)[0]
+            #     changes = changes + 1
             # map this frame data to the elapsed time data
 
-            # print(np.round(np.diff(self.elapsed),2))
-            changes = self.elapsed[changes+1]
+            changes = self.elapsed[changes]
 
             changes = np.insert(changes, 0, np.min(self.elapsed))
             changes = np.append(changes, np.max(self.elapsed))
@@ -218,7 +201,7 @@ class SatsGUI(QWidget):
             self.nntimes = self.elapsed[self.nnframes]
             self.nnline.setData(self.nntimes, self.nnData[:, 1])
             self.scatter.setData(self.nntimes, self.nnData[:, 1])
-            self.rational.setData(self.nntimes, self.rationalData)
+            # self.rational.setData(self.nntimes, self.rationalData)
 
         elif self.inc == 5:
             self.thrLine1.show()
@@ -230,6 +213,7 @@ class SatsGUI(QWidget):
         self.plot.update()
 
     def resetPlot(self):
+        """ Reset the plot in expectation of new data """
         self.deleteRects()
         self.frames.setData([])
         self.nnframeScatter.setData([])
@@ -270,24 +254,71 @@ class SatsGUI(QWidget):
             'delay': self.delay,
             'nnOutput': self.nnData,
             'times': self.elapsed,
-            'rational': self.rationalData
+            'rational': self.rationalData,
+            'folder': self.folder,
+            'timeUnit': self.timeUnit
         }
         print(fname[0])
         with open(fname[0], 'wb') as fileHandle:
             pickle.dump(saveData, fileHandle, pickle.HIGHEST_PROTOCOL)
 
+    def makeChanges(self, times):
+        """ For the fast switching bacteria ATS data we need another way to calculate the fps """
+        changes = []
+        lastFps = 0
+        times = np.diff(times)
+        times = np.round(times*100)
+        print(times)
+        for index in range(1, len(times)):
+            if not times[index] == lastFps and index > 1:
+                changes.append(index)
+            lastFps = times[index]
+        return changes
 
-def main():
-    "Presentation mode of the GUI that can be advanced clicked the A button on the keyboard."
-    app = QApplication(sys.argv)
-    gui = SatsGUI()
-    folder = ('W:/iSIMstorage/Users/Willi/180420_drp_mito_Dora/sample1/'
-              'sample1_cell_3_MMStack_Pos0_combine.ome_ATS')
-    gui.loadData(folder)
-    # gui.loadData('W:/Watchdog/microM_test/201208_cell_Int0s_30pc_488_50pc_561_band_5')
-    gui.show()
 
-    sys.exit(app.exec_())
+class RectItem(pg.GraphicsObject):
+    """ Rectangle that can be added to a pg.ViewBox """
+    def __init__(self, rect, color='#FFFFFF', parent=None):
+        super().__init__(parent)
+        self._rect = rect
+        self.color = color
+        self.picture = QtGui.QPicture()
+        self.generatePicture()
+
+    @property
+    def rect(self):
+        """ return the original rectangle object given on initialization """
+        return self._rect
+
+    def generatePicture(self):
+        """ generate the Picture of te Rectangle using a QPainter """
+        painter = QtGui.QPainter(self.picture)
+        painter.setPen(pg.mkPen(color=self.color))
+        painter.setBrush(pg.mkBrush(color=self.color))
+        painter.drawRect(self.rect)
+        painter.end()
+
+    def paint(self, *painter):
+        """ Not sure when this is called.
+        Might be called by the ViewBox the rectangle is added to """
+        painter[0].drawPicture(0, 0, self.picture)
+
+    def boundingRect(self):
+        """ return the QRectF bounding rectangle of the specified rectangle """
+        return QtCore.QRectF(self.picture.boundingRect())
+
+
+class KeyPressWindow(pg.PlotWidget):
+    """ pg.PlotWidget that catches a key press on the keyboard. Used in SatsGUI to advance the
+    GUI for presentation purposes """
+    sigKeyPress = QtCore.pyqtSignal(object)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def keyPressEvent(self, ev):
+        self.scene().keyPressEvent(ev)
+        self.sigKeyPress.emit(ev)
 
 
 if __name__ == '__main__':

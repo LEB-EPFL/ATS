@@ -2,13 +2,17 @@
 Input/Ouput module for data generated using the network_watchdog approach for adaptive temporal
 sampling on the iSIM
 '''
+# There are mixed naming styles here unfortunately
+# pylint: disable=C0103
 
 import contextlib
 import glob
 import json
 import os
 import re
+import shutil
 import threading
+from multiprocessing import Pool
 from pathlib import Path
 from tkinter import messagebox
 
@@ -20,7 +24,7 @@ import tifffile
 import xmltodict
 from matplotlib.widgets import RectangleSelector
 from skimage import io
-from tensorflow.python.training.tracking.util import streaming_restore
+from toolbox.image_processing import deconvolve
 from tqdm import tqdm
 
 from SmartMicro import ImageTiles, NNfeeder
@@ -29,6 +33,15 @@ from SmartMicro import ImageTiles, NNfeeder
 def loadiSIMmetadata(folder):
     """  Load the information written by matlab about the generated DAQ signals for all in folder
     """
+    rename_midnight = False
+    if rename_midnight is True:
+        fileList = sorted(glob.glob(folder + '/iSIMmetadata*.txt'))
+        for file in fileList:
+            print(file.split("Timing_")[1])
+            if file.split("Timing_")[1][0] == '0':
+                new_name = file.split("Timing_")[0] + "Timing_z" + file.split("Timing_")[1]
+                os.rename(file, new_name)
+
     delay = []
     fileList = sorted(glob.glob(folder + '/iSIMmetadata*.txt'))
     for name in fileList:
@@ -45,6 +58,7 @@ def loadiSIMmetadata(folder):
         except ValueError:
             # This means that delay was > 240 and an empty frame was added
             delay[-1] = delay[-1] + 240
+
     return delay
 
 
@@ -52,6 +66,7 @@ def loadElapsedTime(folder, progress=None, app=None):
     """ get the Elapsed time for all .tif files in folder or from a stack """
 
     elapsed = []
+    step = None
     # Check for folder or stack mode
     # if not re.match(r'*.tif*', folder) is None:
     #     # get microManager elapsed times if available
@@ -60,8 +75,15 @@ def loadElapsedTime(folder, progress=None, app=None):
     #             elapsed.append(
     #                 tif.pages[frame].tags['MicroManagerMetadata'].value['ElapsedTime-ms'])
     # else:
-    fileList = glob.glob(folder + '/img_*[0-9].tif')
-    numFrames = int(len(fileList)/2)
+    if os.path.isfile(folder + '/img_channel001_position000_time000000000_z000.tif'):
+        fileList = sorted(glob.glob(folder + '/img_channel001*'))
+        numFrames = len(fileList)
+        step = 1
+    else:
+        fileList = sorted(glob.glob(folder + '/img_*[0-9].tif'))
+        numFrames = int(len(fileList)/2)
+        step = 2
+
     if progress is not None:
         progress.setRange(0, numFrames*2)
     i = 0
@@ -85,7 +107,7 @@ def loadElapsedTime(folder, progress=None, app=None):
             progress.setValue(i)
         i = i + 1
 
-    return elapsed
+    return elapsed[0::step]
 
 
 def loadNNData(folder):
@@ -203,7 +225,15 @@ def makePrepImages(folder, model):
         tifffile.imwrite(drpFilePrep, drpDataFull)
 
 
-def loadTifFolder(folder, resizeParam=1, order=0, progress=None, cropSquare=True) -> np.ndarray:
+def saveTifStack(target_file, stack1, stack2):
+    """ Get stacks from loadTifFolder and save them as a stack that is easy to load in Fiji.
+    """
+    stack = np.stack([stack1, stack2], axis=1)
+    tifffile.imwrite(target_file, stack, metadata={'axes': 'TCYX', 'TimeIncrement': 1/10})
+
+
+def loadTifFolder(folder, resizeParam=1, order=0, progress=None,
+                  cropSquare=True, outputs=None) -> np.ndarray:
     """Function to load SATS data from a folder with the individual tif files written by
     microManager. Inbetween there might be neural network images that are also loaded into
     an array. Mainly used with NN_GUI_v2.py
@@ -222,11 +252,30 @@ def loadTifFolder(folder, resizeParam=1, order=0, progress=None, cropSquare=True
         stack2 (numpy.array): stack of data depending on order
         stackNN (numpy.array): stack of available network output, with zeros where no file was found
     """
+    outputs = [] if outputs is None else outputs
+
+    def loadDecon(filePath, stackDecon, frame):
+        deconPath = filePath[:-8] + 'decon.tiff'
+        try:
+            stackDecon[frame] = io.imread(deconPath, {'dtype': np.uint16})
+        except FileNotFoundError:
+            print('Did not find', deconPath)
+        return stackDecon
+
+    def loadNN(filePath, stackNN):
+        nnPath = filePath[:-8] + 'nn.tiff'
+        try:
+            stackNN[frame] = io.imread(nnPath)
+        except FileNotFoundError:
+            print('Did not find', nnPath)
+        return stackNN
+
     fileList = sorted(glob.glob(folder + '/img_*.tif'))
     numFrames = int(len(fileList)/2)
     pixelSize = io.imread(fileList[0]).shape
     stack1 = np.zeros((numFrames, pixelSize[0], pixelSize[1]))
     stack2 = np.zeros((numFrames, pixelSize[0], pixelSize[1]))
+    stackDecon = np.zeros((numFrames, pixelSize[0], pixelSize[1]), dtype=np.uint16)
     postSize = round(pixelSize[1]*resizeParam)
     stackNN = np.zeros((numFrames,  postSize, postSize))
     frame = 0
@@ -262,19 +311,20 @@ def loadTifFolder(folder, resizeParam=1, order=0, progress=None, cropSquare=True
             else:
                 stack2[frameNum] = io.imread(filePath)
                 frame = frame + 1
+                stackDecon = loadDecon(filePath, stackDecon, frameNum)
         else:
             if not frameNum % 2:
                 # odd
                 stack1[frame] = io.imread(filePath)
-                nnPath = filePath[:-8] + 'nn.tiff'
-                try:
-                    stackNN[frame] = io.imread(nnPath)
-                except FileNotFoundError:
-                    pass
+                if order == 0:
+                    stackNN = loadNN(filePath, stackNN)
+                    stackDecon = loadDecon(filePath, stackDecon, frame)
             else:
                 stack2[frame] = io.imread(filePath)
+                if order == 1:
+                    stackNN = loadNN(filePath, stackNN)
+                    stackDecon = loadDecon(filePath, stackDecon, frame)
                 frame = frame + 1
-
         # Progress the bar if available
         # if progress is not None:
             # progress.setValue(frameNum)
@@ -285,6 +335,12 @@ def loadTifFolder(folder, resizeParam=1, order=0, progress=None, cropSquare=True
     if cropSquare:
         stack1 = cropToSquare(stack1)
         stack2 = cropToSquare(stack2)
+
+    if 'decon' in outputs:
+        if order == 0:
+            return stack1, stack2, stackNN, stackDecon
+        else:
+            return stack2, stack1, stackNN, stackDecon
 
     if order == 0:
         return stack1, stack2, stackNN
@@ -326,7 +382,7 @@ def loadTifStack(stack, order=None, outputElapsed=False, cropSquare=True, img_ra
     imageMitoOrig = io.imread(stack, key=img_range)
 
     print(imageMitoOrig.shape)
-    with tifffile.TiffFile(stack, fastij=False) as tif:
+    with tifffile.TiffFile(stack) as tif:
         # try to get dataOrder from file
         if order is None:
             mdInfo = tif.ome_metadata  # pylint: disable=E1136  # pylint/issues/3139
@@ -405,13 +461,12 @@ def loadTifStackElapsed(file, numFrames=None, skipFrames=0):
     return elapsed
 
 
-def savegif(stack, times, fps):
+def savegif(stack, times, fps, out_file):
     """ Save a gif that uses the right frame duration read from the files. This can be sped up
     using the fps option"""
-    filePath = 'C:/Users/stepp/Documents/02_Raw/SmartMito/presentation.gif'
     times = np.divide(times, fps).tolist()
     print(stack.shape)
-    imageio.mimsave(filePath, stack, duration=times)
+    imageio.mimsave(out_file, stack, duration=times)
 
 
 def extractTiffStack(file, frame, target):
@@ -455,13 +510,13 @@ def calculateNNforStack(file, model=None, nnPath=None, img_range=None):
     """ calculate neural network output for all frames in a stack and write to new stack """
     # dataOrder = 1  # 0 for drp/foci first, 1 for mito/structure first
     if model is None:
-        from tensorflow import keras
+        from tensorflow import keras  # pylint: disable=C0415
         modelPath = '//lebnas1.epfl.ch/microsc125/Watchdog/GUI/model_Dora.h5'
         modelPath = '//lebnas1.epfl.ch/microsc125/Watchdog/Model/paramSweep5/f32_c07_b08.h5'
         model = keras.models.load_model(modelPath, compile=True)
     elif isinstance(model, str):
         if os.path.isfile(model):
-            from tensorflow import keras
+            from tensorflow import keras  # pylint: disable=C0415
             model = keras.models.load_model(model, compile=True)
         else:
             raise FileNotFoundError
@@ -476,7 +531,8 @@ def calculateNNforStack(file, model=None, nnPath=None, img_range=None):
             mdInfo = tif.ome_metadata.encode(encoding='UTF-8', errors='strict')
             # extract only the planes that was written to
             mdInfoDict = xmltodict.parse(mdInfo)
-            mdInfoDict['OME']['Image']['Pixels']['Plane'] = mdInfoDict['OME']['Image']['Pixels']['Plane'][0::2]
+            intermediateInfo = mdInfoDict['OME']['Image']['Pixels']['Plane'][0::2]
+            mdInfoDict['OME']['Image']['Pixels']['Plane'] = intermediateInfo
 
             dataOrder = int(mdInfoDict['OME']['Image']['Description']['@dataOrder'])
             mdInfo = xmltodict.unparse(mdInfoDict).encode(encoding='UTF-8', errors='strict')
@@ -513,43 +569,102 @@ def calculateNNforStack(file, model=None, nnPath=None, img_range=None):
 
 
 def calculateNNforFolder(folder, model=None):
+    """ Recalculate all the neural network frames for a folder with peak/structure frames """
     if model is None:
-        from tensorflow import keras
+        from tensorflow import keras  # pylint: disable=C0415
         modelPath = '//lebnas1.epfl.ch/microsc125/Watchdog/GUI/model_Dora.h5'
-        modelPath = '//lebnas1.epfl.ch/microsc125/Watchdog/Model/paramSweep5/f32_c07_b08.h5'
+        # modelPath = '//lebnas1.epfl.ch/microsc125/Watchdog/Model/paramSweep5/f32_c07_b08.h5'
         model = keras.models.load_model(modelPath, compile=True)
-    elif isinstance(model,str):
+    elif isinstance(model, str):
         if os.path.isfile(model):
-            from tensorflow import keras
+            from tensorflow import keras  # pylint: disable=C0415
             model = keras.models.load_model(model, compile=True)
         else:
             raise FileNotFoundError
-    if os.path.isfile(folder + '/img_channel001_position000_time000000000_z000.tif'):
-        bact_filelist = sorted(glob.glob(folder + '/img_channel001*'))
-        ftsz_filelist = sorted(glob.glob(folder + '/img_channel000*.tif'))
-    else:
-        print('No channels here')
-        filelist = sorted(glob.glob(folder + '/img_*.tif'))
-        re_odd = re.compile(r'.*time\d*[13579]_.*')
-        bact_filelist = [file for file in filelist if re_odd.match(file)]
-        re_even = re.compile(".*time\d*[02468]_.*")
-        ftsz_filelist = [file for file in filelist if re_even.match(file)]
+    print(folder)
+    files, _ = get_files(folder)
+    bact_filelist = files['network']
+    ftsz_filelist = files['peaks']
+    # re_even = re.compile(r".*time\d*[02468]_.*")
 
     for index, bact_file in tqdm(enumerate(bact_filelist)):
         ftsz_file = ftsz_filelist[index]
         nn_file = bact_file[:-8] + 'nn.tiff'
         if os.path.isfile(nn_file):
+            # os.remove(nn_file)
             continue
-        else:
-            bact = io.imread(bact_file)
-            ftsz = io.imread(ftsz_file)
-            inputData, positions = NNfeeder.prepareNNImages(bact, ftsz, model)
-            outputPredict = model.predict_on_batch(inputData)
+        bact = io.imread(bact_file)
+        ftsz = io.imread(ftsz_file)
+        inputData, positions = NNfeeder.prepareNNImages(bact, ftsz, model)
+        outputPredict = model.predict_on_batch(inputData)
         if model.layers[0].input_shape[0][1] is None:
             nnImage = outputPredict[0, :, :, 0]
         else:
             nnImage = ImageTiles.stitchImage(outputPredict, positions)
-        tifffile.imwrite(nn_file, nnImage)
+        tifffile.imwrite(nn_file, nnImage.astype(np.uint8))
+
+
+def deconvoleStack(file: str, mode: str = 'cpu'):
+    """ Deconvolve the struct part of a stack of foci/struct data using the deconvolve function
+    in the toolbox."""
+    _, stack_struct = loadTifStack(file)
+    stackDecon = np.zeros(stack_struct.shape, dtype=np.uint16)
+    if mode == 'cuda':
+        from toolbox.image_processing import cuda_decon
+        cuda_params = cuda_decon.CudaParams()
+
+    for frame in tqdm(range(stack_struct.shape[0])):
+        if mode == 'cpu':
+            stackDecon[frame, :, :] = deconvolve.full_richardson_lucy(stack_struct[frame, :, :])
+        else:
+            stackDecon[frame, :, :] = cuda_decon.richardson_lucy(stack_struct[frame, :, :],
+                                                                 params=cuda_params)
+
+    out_file = file[:-8] + '_decon.tiff'
+    tifffile.imwrite(out_file, stackDecon)
+
+
+def deconvolveFolder(folder, n_threads=10, mode='cpu', cuda_params=None, subfolder=None):
+    """ Wrapper function for deconvolveOneFolder to allow for parallel computation """
+
+    if isinstance(folder, list) and mode == 'cpu':
+        with Pool(n_threads) as p:
+            p.map(deconvolveOneFolder, folder, subfolder)
+    elif isinstance(folder, list):
+        for single_folder in folder:
+            deconvolveOneFolder(single_folder, mode, cuda_params, subfolder)
+    else:
+        deconvolveOneFolder(folder, mode, cuda_params, subfolder)
+
+
+def deconvolveOneFolder(folder, mode='cpu', cuda_params=None, subfolder=None):
+    """ Deconvolve the struct frames in a folder of foci/struct data using the deconvolve function
+    in the toolbox. """
+    if mode == 'cuda':
+        from toolbox.image_processing import cuda_decon
+
+    if cuda_params is None and mode == 'cuda':
+        print('Using default coda_params')
+        cuda_params = cuda_decon.CudaParams(background=0.85) # 0.85 1 for caulo highlight
+    print('sigma: ', cuda_params.kernel['sigma'], '\nbackground: ', cuda_params.background)
+
+    print(folder)
+    files, _ = get_files(folder)
+    files = files['network']
+    for file in tqdm(files):
+        struct_img = io.imread(file)
+        if mode == 'cpu':
+            decon_img = deconvolve.full_richardson_lucy(struct_img)
+        elif mode == 'cuda':
+            decon_img = cuda_decon.richardson_lucy(struct_img, params=cuda_params)
+
+        if subfolder is None:
+            out_file = file[:-8] + 'decon.tiff'
+        else:
+            os.makedirs(os.path.join(folder, subfolder), exist_ok=True)
+            out_file = os.path.join(folder, subfolder, os.path.basename(file)[:-8] + '.decon.tiff')
+
+        tifffile.imwrite(out_file, decon_img)
 
 
 def dataOrderMetadata(file, dataOrder=None, write=True):
@@ -603,7 +718,7 @@ def dataOrderMetadata(file, dataOrder=None, write=True):
     return int(dataOrder) if dataOrder is not None else dataOrder
 
 
-def cropOMETiff(file, outFile=None, cropFrame=None, cropRect=None):
+def cropOMETiff(file, outFile=None, cropFrame=None, cropRect=None, timeout=15):
     """ Crop a tif while conserving the metadata. Micromanager seems to save data in a rather weird
     format if it is supposed to save them to stacks. It limits the file size to ~4GB and splits the
     series up into several files _1, _2, _3 etc. The OME metadata is however written to the first
@@ -643,7 +758,7 @@ def cropOMETiff(file, outFile=None, cropFrame=None, cropRect=None):
     else:
         rect = '-crop ' + ','.join([str(i) for i in cropRect])
 
-    files = file.as_posix() + ' ' + outFile.as_posix() + ' & timeout 15'
+    files = file.as_posix() + ' ' + outFile.as_posix() + ' & timeout ' + str(timeout)
     command = ' '.join([bfconvert, compression, frames, rect, files])
     print(command)
     os.system(command)
@@ -693,17 +808,99 @@ def defineCropRect(file):
                                    minspanx=5, minspany=5, spancoords='pixels', rectprops=rectprops,
                                    interactive=True, state_modifier_keys={'square': 'shift'})
     plt.show()
-    rectProp = rectHandle._rect_bbox
+    # There might be different properties there that could give the same information
+    # https://matplotlib.org/stable/api/widgets_api.html#matplotlib.widgets.RectangleSelector
+    rectProp = rectHandle._rect_bbox  # pylint: disable=W0212
     rectProp = tuple(int(x) for x in rectProp)
     print(rectProp)
     return rectProp
 
 
+def get_files(folder):
+    """ Get the relevant files from a folder of foci/struct data """
+    stack = False
+    ftsz_filelist = False
+    bact_filelist = False
+    if os.path.isfile(folder + '/img_channel001_position000_time000000000_z000.tif'):
+        bact_filelist = sorted(glob.glob(folder + '/img_channel001*_z*'))
+        ftsz_filelist = sorted(glob.glob(folder + '/img_channel000*.tif'))
+        nn_filelist = sorted(glob.glob(folder + '/img_*_nn*'))
+    elif os.path.isfile(folder + '/img_channel000_position000_time000000000_z000.tif'):
+        print('No channels here')
+        filelist = sorted(glob.glob(folder + '/img_*.tif'))
+        re_odd = re.compile(r".*time\d*[13579]_.*tif$")
+        bact_filelist = [file for file in filelist if re_odd.match(file)]
+        re_even = re.compile(r".*time\d*[02468]_.*")
+        ftsz_filelist = [file for file in filelist if re_even.match(file)]
+        nn_filelist = sorted(glob.glob(folder + '/img_*_nn*'))
+    else:
+        print("Image stacks")
+        files = sorted(glob.glob(folder + '*_crop.ome.tif'))
+        print(files)
+        if isinstance(files, list):
+            nn_filelist = [file[:-8] + '_nn.ome.tif' for file in files]
+        else:
+            nn_filelist = files[:-8] + '_nn.ome.tif'
+        stack = files
+
+    files = {'network': bact_filelist,
+             'peaks': ftsz_filelist,
+             'nn': nn_filelist,
+             'stack': stack}
+    return files, stack
+
+
+def transfer_nn_to_folder(folder):
+    files, _ = get_files(folder)
+    files = files['nn']
+    os.makedirs(os.path.join(folder, 'nn'), exist_ok=True)
+    for idx, file in tqdm(enumerate(files)):
+        shutil.copyfile(file, os.path.join(folder, 'nn', str(idx) + '_neural.tif'))
+        os.remove(file)
+
+
 def main():
     """ Main method calculating a nn stack for a set of old Mito/drp stacks """
-    folder = 'W:/Watchdog/bacteria/210506_weakSyncro/FOV_1'
-    delay = loadiSIMmetadata(folder)
-    print(delay)
+    from Analysis import data_locations
+
+    # folder = 'W:/Watchdog/microM_test/cell_IntSmart_30pc_488_50pc_561_band_4'
+    # calculateNNforFolder(folder)
+    # transfer_nn_to_folder(folder)
+    # ats_folders = data_locations.caulo_folders['fast']
+
+    ats_folders = data_locations.mito_folders['ats']
+    deconvolveFolder(ats_folders, mode='cuda', subfolder=None)
+
+    # slow_folders = data_locations.mito_folders['fast']
+    # for folder in slow_folders:
+    #     print(folder)
+    #     _, stacks = get_files(folder)
+    #     for stack in stacks:
+    #         deconvoleStack(stack, mode='cuda')
+
+    from toolbox.misc.speak import say_done
+    say_done()
+
+    # ats_folder = 'W:/Watchdog/microM_test/'
+    # ats_samples = ['201208_cell_Int0s_30pc_488_50pc_561_band_4',
+    #                '201208_cell_Int0s_30pc_488_50pc_561_band_5',
+    #                '201208_cell_Int0s_30pc_488_50pc_561_band_6']
+    #                 #'201208_cell_Int0s_30pc_488_50pc_561_band_10']
+    # ats_folders = [ats_folder + sample for sample in ats_samples]
+
+    # target_folder = 'W:/Watchdog/microM_test/201208_cell_Int0s_30pc_488_50pc_561_band_10/timed'
+    # stack1, stack2, _ = loadTifFolder(folder)
+    # saveTifStack(os.path.join(target_folder, os.path.basename(folder) + '.tiff'), stack1, stack2)
+
+    # folder = "C:/Users/stepp/Documents/02_Raw/Caulobacter_iSIM/slow/"
+    # samples = ["0", "1", "2", "3", "4", "6", "7", "8", "10", "11", "13"]
+    # folders = [folder + sample + '/' for sample in samples]
+    # for folder in folders:
+    #     calculateNNforFolder(folder)
+
+    # folder = 'W:/Watchdog/bacteria/210512_Syncro/FOV_3/Default'
+    # delay = loadElapsedTime(folder)
+    # print(delay)
     # folder = '//lebnas1.epfl.ch/microsc125/Watchdog/bacteria/210409_Caulobacter/FOV_1/Default'
     # loadRationalData(folder)
 
@@ -712,7 +909,6 @@ def main():
     # model = keras.models.load_model('W:/Watchdog/Model/model_Dora.h5', compile=False)
     # makePrepImages(folder, model)
     # loadiSIMmetadata(folder)
-
 
     # allFiles = glob.glob('//lebnas1.epfl.ch/microsc125/iSIMstorage/Users/Willi/'
     #                      '180420_DRP_mito_Dora/**/*MMStack*lzw.ome.tif', recursive=True)

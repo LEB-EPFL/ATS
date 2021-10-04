@@ -26,7 +26,7 @@ SOLARIZED_COLORS = {
          "green":   "#859900"
          }
 
-PUBLICATION_COLORS =  {
+PUBLICATION_COLORS = {
          'red':  '#d22a26',
          'darkblue': '#02353e',
          'lightblue': '#0293a4',
@@ -63,8 +63,10 @@ def get_colors(style):
     elif style == "solarized_light":
         return LIGHT
 
+
 def set_mpl_font(size=10):
     # set Font
+
     mpl.rcParams['font.sans-serif'] = "arial"
     mpl.rcParams['font.family'] = "sans-serif"
     mpl.rcParams['font.size'] = size
@@ -81,7 +83,8 @@ def set_mpl_font(size=10):
     # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
     # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-def set_mpl_style(style:str):
+
+def set_mpl_style(style: str):
 
     if "solarized" in style:
         if "dark" in style:
@@ -102,6 +105,7 @@ def set_mpl_style(style:str):
     else:
         plt.style.use(style)
 
+
 def publication_stylesheet():
     params = {
 
@@ -112,36 +116,44 @@ def publication_stylesheet():
                                             PUBLICATION_COLORS['darkred'],
                                             PUBLICATION_COLORS['lightred']]),
 
-        "boxplot.medianprops.color": '#404040'
+        "savefig.facecolor": "None",
+        "savefig.edgecolor": "None",
+        "boxplot.medianprops.color": '#505050',
+        "boxplot.boxprops.color": '#707070',
+        "pdf.fonttype": 42
     }
     return params
 
+
 def solarized_stylesheet(rebase):
     params = {"ytick.color": rebase["0"],  # 'k'
-        "xtick.color": rebase["0"],  # 'k'
-        "text.color": rebase["0"],  # 'k'
-        "savefig.facecolor": rebase["02"],  # 'w'
-        "patch.facecolor": SOLARIZED_COLORS["blue"],  # 'b'
-        "patch.edgecolor": rebase["0"],  # 'k'
-        "grid.color": rebase["03"],  # 'k'
-        "figure.edgecolor": rebase["02"],  # 'w'
-        "figure.facecolor": rebase["03"],  # '0.75'
-        "axes.prop_cycle": cycler('color', [SOLARIZED_COLORS["blue"], SOLARIZED_COLORS["green"], SOLARIZED_COLORS["red"],
-                            SOLARIZED_COLORS["cyan"], SOLARIZED_COLORS["magenta"],
-                            SOLARIZED_COLORS["orange"], rebase["0"]]),
-        # ['b', 'g', 'r', 'c', 'm', 'y', 'k']
-        "axes.edgecolor": rebase["03"],  # 'k'
-        "axes.facecolor": rebase["02"],  # 'w'
-        "axes.labelcolor": rebase["0"],  # 'k'
+              "xtick.color": rebase["0"],  # 'k'
+              "text.color": rebase["0"],  # 'k'
+              "savefig.facecolor": rebase["02"],  # 'w'
+              "patch.facecolor": SOLARIZED_COLORS["blue"],  # 'b'
+              "patch.edgecolor": rebase["0"],  # 'k'
+              "grid.color": rebase["03"],  # 'k'
+              "figure.edgecolor": rebase["02"],  # 'w'
+              "figure.facecolor": rebase["03"],  # '0.75'
+              "axes.prop_cycle": cycler('color', [SOLARIZED_COLORS["blue"],
+                                                  SOLARIZED_COLORS["green"],
+                                                  SOLARIZED_COLORS["red"],
+                                                  SOLARIZED_COLORS["cyan"],
+                                                  SOLARIZED_COLORS["magenta"],
+                                                  SOLARIZED_COLORS["orange"], rebase["0"]]),
+              # ['b', 'g', 'r', 'c', 'm', 'y', 'k']
+              "axes.edgecolor": rebase["03"],  # 'k'
+              "axes.facecolor": rebase["02"],  # 'w'
+              "axes.labelcolor": rebase["0"],  # 'k'
 
-        "boxplot.whiskerprops.color": SOLARIZED_COLORS["base00"],
-        "boxplot.whiskerprops.linewidth": .5,
-        "boxplot.medianprops.color": SOLARIZED_COLORS["base00"],
-        "boxplot.medianprops.linewidth": 1,
-        "boxplot.boxprops.color": SOLARIZED_COLORS["base00"],
-        "boxplot.boxprops.linewidth": 1,
-        "boxplot.capprops.color": SOLARIZED_COLORS["base00"],
-        "boxplot.capprops.linewidth": 1,
+              "boxplot.whiskerprops.color": SOLARIZED_COLORS["base00"],
+              "boxplot.whiskerprops.linewidth": .5,
+              "boxplot.medianprops.color": SOLARIZED_COLORS["base00"],
+              "boxplot.medianprops.linewidth": 1,
+              "boxplot.boxprops.color": SOLARIZED_COLORS["base00"],
+              "boxplot.boxprops.linewidth": 1,
+              "boxplot.capprops.color": SOLARIZED_COLORS["base00"],
+              "boxplot.capprops.linewidth": 1,
 
-        }
+              }
     return params
