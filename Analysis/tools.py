@@ -131,8 +131,8 @@ def get_snr(filelist, rect=None):
     """
     snr = []
     bleaching = []
-
-    for file in filelist:
+    start_area = None
+    for idx, file in enumerate(filelist):
         if os.path.isfile(file):
             image = cv2.imread(file, -1)
         else:
@@ -146,12 +146,14 @@ def get_snr(filelist, rect=None):
         ret3, mask = cv2.threshold(blur, 0, 1, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
         invert_mask = cv2.bitwise_not(mask).astype(np.bool)
         mask = mask.astype(np.bool)
+        start_area = np.sum(mask) if idx == 0 else start_area
+        area = np.sum(mask)
         # plt.imshow(mask)
         # plt.show()
         mean_signal = np.mean(image[mask])
         mean_noise = np.mean(image[invert_mask])
         bleaching.append(mean_signal)
-        snr.append(mean_signal/mean_noise)
+        snr.append(mean_signal/mean_noise*(area/start_area))
     return snr, bleaching
 
 
@@ -251,7 +253,7 @@ def deconvolve(evt_image, intermediate: int = 0):
     return evt_decon
 
 
-def get_decay(times, snr):
+def get_decay(times, snr, cutoff=0.9):
     def exp_func(t, A, K, C):
         return A * np.exp(-K*t) + C
     times_decay = np.divide(times, 1_000_000)
@@ -262,13 +264,23 @@ def get_decay(times, snr):
     params, _ = optimize.curve_fit(exp_func, times_decay, bleaching_decay,
                                    p0=[0.1, 1, np.min(bleaching_decay)],
                                    maxfev=1000)
+
+    params2, _ = optimize.curve_fit(exp_func, times_decay,
+                                    bleaching_decay-np.max(bleaching_decay) + 1,
+                                    p0=[0.1, 1, np.min(bleaching_decay)],
+                                    maxfev=1000)
+    cutoff_time = calc_cutoff_time(params2, cutoff)
     # plt.figure()
     # plt.plot(times_decay, bleaching_decay)
-    # plt.plot(times_decay, exp_func(times_decay,params[0], params[1], params[2]))
-    # print(params[1])
+    # plt.plot(times_decay, exp_func(times_decay, params[0], params[1], params[2]))
+    # print(cutoff_time)
     # plt.show()
     # print('fitting done')
-    return params[1]
+    return params[1], cutoff_time
+
+
+def calc_cutoff_time(params, cutoff=0.9):
+    return np.log(params[0]/(cutoff-params[2]))/params[1]
 
 
 def distance_watershed(img, coords=None, sigma=0.1):

@@ -6,6 +6,9 @@ from skimage import transform
 import numpy as np
 import pdb
 
+from matplotlib import cm
+from SmartMicro import NNio as io
+import data_locations
 import matplotlib.pyplot as plt
 from toolbox.plotting import colormaps, saving
 from toolbox.image_processing import prepare
@@ -14,20 +17,28 @@ from toolbox.image_processing import layers
 import os
 
 
-def main(data):
-    # data = load_dataset('caulo')
+def main(data=None):
+    # data = load_dataset('mito')
     prepare_data(data)
     detect_events(data)
     follow_events_batch(data)
     highlights = extract_event_highlight(data, save=True)
     plot_highlights(highlights, data)
-    return data
+    return data, highlights
+
+
+def deconvolve_all(dataset: str):
+    folders = data_locations.caulo_folders['ats']
+    for folder in folders:
+        print(folder)
+        io.deconvolveOneFolder(folder, mode='cuda', subfolder='decon_net_highlight',
+                               channel='network')
 
 
 def load_dataset(dataset: str) -> ATS_Data:
     data = ATS_Data()
     data.choose_dataset(dataset, 'highlight_reel')
-    data.init_files('ats')
+    data.init_files('ats', decon_id='decon_net_highlight/*decon.tiff')
     return data
 
 
@@ -62,7 +73,9 @@ def extract_event_highlight(data: ATS_Data, save: bool = False):
         # if idx == 2:
         #     continue
         print(folder.folder)
-        netw_imgs = folder.files['network']
+        netw_image_type = 'decon'
+        netw_imgs = folder.files[netw_image_type]
+        print(netw_imgs)
         peak_imgs = folder.files['nn']
         for idx, event in folder.events.iterrows():
             # pdb.set_trace()
@@ -80,10 +93,12 @@ def extract_event_highlight(data: ATS_Data, save: bool = False):
             netw_subframe = netw_subframe - np.min(netw_subframe)
             netw_subframe[netw_subframe < data.highlight_vmin] = data.highlight_vmin
             netw_subframe = netw_subframe - data.highlight_vmin
-            if data.dataset == 'mito':
+            if netw_image_type == 'network' and data.dataset == 'mito':
                 netw_subframe = prepare.prepare_image(netw_subframe)
+
+
             # image = prepare.screen_images(netw_subframe, peak_subframe)
-            image = layers.screen_images(netw_subframe, peak_subframe, get_array=False)
+            image = layers.screen_images(netw_subframe, peak_subframe, colormap2=cm.viridis, get_array=False)
             highlight = {'image': image.get_image_as_array(),
                          'folder': folder.folder,
                          'frame': frame
@@ -107,7 +122,7 @@ def plot_highlights(highlights, data: ATS_Data):
 
     for idx, highlight in enumerate(highlights):
         image = highlight['image']
-
+        axs[idx].set_title(highlight['folder'][-5:])
         axs[idx].imshow(image)
         axs[idx].set_xticks([])
         axs[idx].set_yticks([])

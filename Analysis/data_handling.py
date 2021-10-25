@@ -25,21 +25,28 @@ class ImageFiles:
     event_options: dict
     events: pd.DataFrame = pd.DataFrame()
     stack: bool = False
+    decon_id: str = 'None'
 
-    def __init__(self, ats_data, mode, folder):
+    def __init__(self, ats_data, mode, folder, decon_id):
         self.mode = mode
         self.event_options = {'detection_thr': ats_data.detection_threshold,
                               'observation_time': ats_data.highlight_observation_time,
                               'min_distance': ats_data.min_event_distance}
         self.folder = folder
-        self.files, self.stack = get_files(folder)
+        self.decon_id = decon_id
+        if decon_id.lower() == 'none':
+            self.files, self.stack = get_files(folder)
+        else:
+            self.files, self.stack = get_files(folder, decon_id)
+
         if self.stack:
             self.times = NNio.loadTifStackElapsed(self.stack)
         else:
             self.times = tools.get_times(self.files['peaks'])
             self.files['network'], self.files['peaks'], self.files['nn'], self.files['decon'] = \
                 NNio.loadTifFolder(folder, resizeParam=unit_info.sim_to_isim_factor,
-                                   order=1, outputs=['decon'])
+                                   order=1, outputs=['decon'], decon_id=decon_id)
+        print(self.files['network'])
 
     def init_events(self, threshold=None):
         if threshold is None:
@@ -95,12 +102,12 @@ class ATS_Data:
             self.save_file = os.path.join(self.analysis_folder, measurement, 'mito_events')
             self.observation_time = 20  # seconds
             self.highlight_observation_time = 60
-            self.highlight_vmin = 20
+            self.highlight_vmin = 8
             self.hightlight_frame_size = 30
             self.constriction_decon_background = 0.85
-            self.highlight_decon_background = 0.85
+            self.highlight_decon_background = 0.92
 
-    def init_files(self, mode) -> List[ImageFiles]:
+    def init_files(self, mode, decon_id='img_*_decon*') -> List[ImageFiles]:
         self.files_list = []
         if mode.lower() == 'ats':
             folders = self.ats_folders
@@ -109,11 +116,11 @@ class ATS_Data:
         elif mode.lower() == 'slow':
             folders = self.slow_folders
         for folder in folders:
-            self.files_list.append(ImageFiles(self, mode, folder))
+            self.files_list.append(ImageFiles(self, mode, folder, decon_id=decon_id))
         return self.files_list
 
 
-def get_files(folder):
+def get_files(folder, decon_id='img_*_decon*'):
     stack = False
     print(folder)
     if os.path.isfile(folder + '/img_channel001_position000_time000000000_z000.tif'):
@@ -129,7 +136,7 @@ def get_files(folder):
         re_even = re.compile(r".*time\d*[02468]_.*")
         ftsz_filelist = [file for file in filelist if re_even.match(file)]
         nn_filelist = sorted(glob.glob(folder + '/img_*_nn*'))
-        decon_filelist = sorted(glob.glob(folder + '/img_*_decon*'))
+        decon_filelist = sorted(glob.glob(folder + '/' + decon_id))
     else:
         print("Image stacks")
         files = sorted(glob.glob(folder + '*_crop.ome.tif'))[0]

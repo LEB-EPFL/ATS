@@ -35,7 +35,7 @@ tools.set_plotting_parameters()
 
 
 # Main ATS plot
-output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/"
+output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/Figure1/"
 output_file = "ATS_plot_2.pdf"
 fig_size = (10*cm, 6*cm)  # Was 16 width for original plots
 
@@ -55,21 +55,21 @@ FREQ_UNIT = 'fps'  # 'Hz'
 file = "c:/Users/stepp/Documents/05_Software/Analysis/2106_Publication/Mito_ATS.pkl"
 
 
-# SYNCRO data
-syncro_data = data_locations.caulo_folders['syncro']
-syncro_data = syncro_data[2]
+# # SYNCRO data
+# syncro_data = data_locations.caulo_folders['syncro']
+# syncro_data = syncro_data[2]
 
-file = syncro_data['folder']
-CROP_START, CROP_END = syncro_data['crop']
-LOWER_THRESHOLD, UPPER_THRESHOLD = syncro_data['threshold']
-TIME_UNIT = syncro_data['timeUnit']
-output_file = syncro_data['output']
-fig_size = (13.5*cm, 4.5*cm)
-thr_text = ''
-SYNCRO = True
-DELAYFACTOR = 60*60
-FREQ_NAME = 'Imaging Speed'  # Imaging Rate
-FREQ_UNIT = 'fph'  # '1/h'
+# file = syncro_data['folder']
+# CROP_START, CROP_END = syncro_data['crop']
+# LOWER_THRESHOLD, UPPER_THRESHOLD = syncro_data['threshold']
+# TIME_UNIT = syncro_data['timeUnit']
+# output_file = syncro_data['output']
+# fig_size = (13.5*cm, 4.5*cm)
+# thr_text = ''
+# SYNCRO = True
+# DELAYFACTOR = 60*60
+# FREQ_NAME = 'Imaging Speed'  # Imaging Rate
+# FREQ_UNIT = 'fph'  # '1/h'
 
 
 def main():
@@ -174,7 +174,7 @@ def replotATStimes(file, colors):
     if ats:
         ax2 = ax1.twinx()
         delayY = [delay*DELAYFACTOR for delay in delayY]
-        ax2.plot(delayX, delayY, color=colors['ats'], linewidth=1)
+        ax2.plot(delayX, delayY, color=colors['ats'], linewidth=1, zorder=0)
         ax2.spines["right"].set_edgecolor(colors['ats'])
         ax2.tick_params(axis='y', colors=colors['ats'])
         if not SYNCRO:
@@ -183,7 +183,7 @@ def replotATStimes(file, colors):
         rect = matplotlib.patches.Rectangle((0, LOWER_THRESHOLD), delayX[-1],
                                             UPPER_THRESHOLD-LOWER_THRESHOLD,
                                             linewidth=0, edgecolor='none',
-                                            facecolor=(0.5, 0.5, 0.5, 0.5))
+                                            facecolor=(0.5, 0.5, 0.5, 0.5), zorder=-100)
         ax1.add_patch(rect)
         ax2.grid(False)
     else:
@@ -197,14 +197,16 @@ def replotATStimes(file, colors):
 
     # do not plot the last values of nnOutput
     crop = 1
+    plot_params = {'linewidth': 0.5, 'alpha': 0.5, 'color': colors['slow'], 'zorder': 100}
+    scatter_params = {'s': 3, 'color': colors['slow'], 'zorder': 101}
     if CROP:
-        ax1.plot(data['times'], data['nnOutput'], color=colors['slow'], linewidth=1,
-                 linestyle='dotted', marker='.', markersize=7)
+        plot_data = [data['times'], data['nnOutput']]
+        ax1.plot(*plot_data, **plot_params)
+        ax1.scatter(*plot_data, **scatter_params)
     else:
         ax1.plot(data['times'][(data['times'].shape[0] - data['nnOutput'].shape[0]):-crop],
-                 data['nnOutput'][:-crop, 1], color=colors['slow'], linewidth=1,
-                 linestyle='dotted', marker='.', markersize=7)
-
+                 data['nnOutput'][:-crop, 1], color=colors['slow'], **plot_params)
+        ax1.scatter()
     if PLOT_RATIONAL:
         try:
             ax1.plot(data['times'][(data['times'].shape[0] - data['rational'].shape[0]):],

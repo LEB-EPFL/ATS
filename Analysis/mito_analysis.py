@@ -34,7 +34,9 @@ colors = [colors[0], colors[3], colors[2], colors[5], colors[4]]
 mpl.rcParams.update({"axes.prop_cycle": cycler('color', colors)})
 cm = 1/2.54  # centimeters in inches
 
-
+RECALCULATE = True
+NORMALIZED_SNR_CUTOFF = True
+SNR_CUTOFF = 1.7
 TIME_ADJUST = 1_000*60
 INFO_ADJUST = 10_000
 
@@ -66,7 +68,7 @@ def constriction_analysis():
         all_width, _ = constriction(ats_folders, ats=True)
 
     # all_width = constriction(ats_folders, ats=True)
-    #FIXED
+    # FIXED
     json_file = os.path.dirname(slow_folders[1]) + "/analysis.json"
     if os.path.isfile(json_file):
         with open(json_file, 'r') as in_file:
@@ -87,31 +89,31 @@ def constriction_analysis():
     fast_width = list(filter(None, fast_width))
     print(json_file)
 
-    data =[slow_width, fast_width] + list(list(filter(None, x[1])) for x in all_width.items())
+    data = [slow_width, fast_width] + list(list(filter(None, x[1])) for x in all_width.items())
     data = [np.multiply(sublist, pixel_calib) for sublist in data]
-    labels =["slow", "fast"] +  list(x[0] for x in all_width.items())
-    plt.boxplot(data, labels=labels, showfliers=False, whis=[5,95])
-    violin.violin_overlay(data)
-    annotate.significance_brackets([(1,2)])
+    labels = ["slow", "fast"] + list(x[0] for x in all_width.items())
+    plt.boxplot(data, labels=labels, showfliers=False, whis=[5, 95])
+    violin.violin_overlay(data, params={'s': 1, 'alpha': 0.5})
+    annotate.significance_brackets([(1, 2)])
 
 
 def info_analysis():
 
     if style == "publication" and VERTICAL_MODE:
         fig1, ax1 = plt.subplots(figsize=fig_size)
-        fig2, ax2  = plt.subplots(figsize=fig_size)
+        fig2, ax2 = plt.subplots(figsize=fig_size)
     elif style == "publication":
         fig1, ax1 = plt.subplots(figsize=(6*cm, 6*cm))
-        fig2, ax2  = plt.subplots(figsize=(6*cm, 6*cm))
+        fig2, ax2 = plt.subplots(figsize=(6*cm, 6*cm))
     else:
         fig1, ax1 = plt.subplots()
         fig2, ax2 = plt.subplots()
     axes = [ax1, ax2]
     figs = [fig1, fig2]
 
-    ats, ats_high, ats_low, ats_decay = get_ats_infos(ats_folders, axes)
-    slow, slow_decay = get_fixed_infos(slow_folders, axes)
-    fast, fast_decay = get_fixed_infos(fast_folders, axes)
+    ats, ats_high, ats_low, ats_decay, ats_cutoff = get_ats_infos(ats_folders, axes)
+    slow, slow_decay, slow_cutoff = get_fixed_infos(slow_folders, axes)
+    fast, fast_decay, fast_cutoff = get_fixed_infos(fast_folders, axes)
 
     ### Cum Info Plot
     for fig, ax in zip(figs, axes):
@@ -147,9 +149,10 @@ def info_analysis():
         fig, ax = plt.subplots()
     labels = ['slow', 'fast', 'EDA']
     data = [slow_decay, fast_decay, ats_decay]
-    box_dict = plt.boxplot(data, labels=labels, showfliers=False, whis=[5,95], widths=0.5,
+    box_dict = plt.boxplot(data, labels=labels, showfliers=False, whis=[5, 95], widths=0.5,
                            vert=VERTICAL_MODE)
-    violin.violin_overlay(data, spread=0, vert=VERTICAL_MODE)
+    violin.violin_overlay(data, spread=0, vert=VERTICAL_MODE, params={'s': 13, 'alpha': 0.6,
+                                                                      'edgecolors': 'none'})
     # for index, item in enumerate(box_dict['boxes']):
     #     plt.setp(item, color=colors[index])
     # so it fits the size of the cumsum plot
@@ -160,8 +163,8 @@ def info_analysis():
     plt.tight_layout()
     plt.savefig(output_folder + "mito_decay_" + PLOT_MODE + ".pdf", transparent=True)
 
-    print('bleaching decay fast/EDA: ', np.mean(fast_decay)/np.mean(ats_decay))
-    print('bleaching decay EDA/slow: ', np.mean(ats_decay)/np.mean(slow_decay))
+    print('\n\nbleaching decay fast/EDA: ', np.mean(fast_decay)/np.mean(ats_decay))
+    print(f'bleaching decay EDA/slow: {np.mean(ats_decay)/np.mean(slow_decay)}')
 
     # P VALUES
     _, p_value = stats.ttest_ind(ats_high, ats_low)
@@ -177,9 +180,10 @@ def info_analysis():
 
     labels = ['slow', 'fast', 'EDA', 'EDA-fast', 'EDA-slow']
     data = [slow, fast, ats, ats_high, ats_low]
-    plt.boxplot(data, labels=labels, showfliers=False, whis=[5,95])
-    violin.violin_overlay(data, [True, True, False, False, False])
-    annotate.significance_brackets([(0,2), (3,4)])
+    plt.boxplot(data, labels=labels, showfliers=False, whis=[5, 95])
+    violin.violin_overlay(data, [True, True, False, False, False],
+                          params={'s': 0.5, 'alpha': 0.5})
+    annotate.significance_brackets([(0, 2), (3, 4)])
 
     ax.spines['right'].set_visible(False)
     ax.spines['top'].set_visible(False)
@@ -192,20 +196,25 @@ def info_analysis():
     print("Fast: N = {}, n = {}".format(len(fast), len(fast_folders)))
     print(" EDA: N = {}, n = {}".format(len(ats), len(ats_folders)))
 
+    print('Imaging Times:')
+    print(f'eda/fast: {np.mean(ats_cutoff)/np.mean(fast_cutoff)},' +
+          f'slow/eda: {np.mean(slow_cutoff)/np.mean(ats_cutoff)}')
+
     # Rational variable plot
 
     # ats, ats_high, ats_low, ats_decay = get_ats_infos(ats_folders, axes)
     # # slow, slow_decay = get_fixed_infos(slow_folders, axes)
     # fast, fast_decay = get_fixed_infos(fast_folders, axes)
 
-
     plt.show()
+
 
 def get_ats_infos(folders, axs):
     info_ats = []
     info_ats_high = []
     info_ats_low = []
     decays = []
+    cut_off_times = []
     for folder in folders:
         print(folder)
         json_file = folder + '/analysis_json.txt'
@@ -218,9 +227,9 @@ def get_ats_infos(folders, axs):
             low_info = data_dict['nn_low']
         else:
             filelist = sorted(glob.glob(folder + '/img_*.tif'))
-            re_odd = re.compile(".*time\d*[13579]_.*tif$")
+            re_odd = re.compile(r".*time\d*[13579]_.*tif$")
             mito_filelist = [file for file in filelist if re_odd.match(file)]
-            re_even = re.compile(".*time\d*[02468]_.*")
+            re_even = re.compile(r".*time\d*[02468]_.*")
             drp_filelist = [file for file in filelist if re_even.match(file)]
             nn_filelist = sorted(glob.glob(folder + '/img_*_nn*'))
 
@@ -244,25 +253,36 @@ def get_ats_infos(folders, axs):
         info_ats_low.extend(low_info)
         # info_ats.append(np.mean(info))
 
-        times_decay = np.divide(data_dict['times'],10_000)
+        times_decay = np.divide(data_dict['times'], 10_000)
         times_decay = times_decay - np.min(times_decay)
-        bleaching_decay = np.divide(data_dict['bleaching'],data_dict['bleaching'][0])
-        # plt.plot(times, bleaching, color=colors[2])
+        bleaching_decay = np.divide(data_dict['bleaching'], data_dict['bleaching'][0])
+        # plt.plot(times_decay, bleaching_decay, color=colors[2])
         params, _ = optimize.curve_fit(exp_func, times_decay, bleaching_decay, maxfev=1000)
         decays.append(params[1])
         # A, K, C = params
-        # plt.plot(times, exp_func(times, A, K, C), color=colors[2])
+        # plt.plot(times_decay, exp_func(times_decay, A, K, C), color=colors[2])
         # plt.show()
-
+        cut_off_time = calc_cutoff_time(params)
+        cut_off_times.append(cut_off_time)
+        # print(params, cut_off_time)
         ### SNR plot
         # snr_plot(data_dict)
         # plt.show()
 
-        snr_cutoff_frame = np.sum([x > 1.1 for x in data_dict['snr']])
+        if NORMALIZED_SNR_CUTOFF:
+            snr = data_dict['snr']
+            snr = snr/np.max(snr) + 1
+        else:
+            snr = data_dict['snr']
+
+        snr_cutoff_frame = np.sum([x > SNR_CUTOFF for x in snr])
         times_int = data_dict['times'] - np.min(data_dict['times'])
         times = data_dict['times'][1:snr_cutoff_frame+1]
         times = times - np.min(times)
         print('SNR cutoff:', times[-1])
+        print('full time: ', times_int[-1])
+        # plt.plot(times_int, snr)
+        # plt.show()
         axs[0].plot(np.divide(times, TIME_ADJUST),
                     np.cumsum(info)[:snr_cutoff_frame],
                     color=colors[2])
@@ -270,7 +290,7 @@ def get_ats_infos(folders, axs):
                     np.cumsum(np.ones(len(times_int))),
                     color=colors[2])
 
-    return info_ats, info_ats_high, info_ats_low, decays
+    return info_ats, info_ats_high, info_ats_low, decays, cut_off_times
 
 
 def snr_plot(data_dict):
@@ -285,7 +305,8 @@ def snr_plot(data_dict):
     ax2 = ax.twinx()
     ax2.set_ylabel('Imaging Speed [fps]', color=colors[2])
     # fps = fps - np.min(fps)
-    # fps = fps/np.max(fps) * (np.max(data_dict['snr']) - np.min(data_dict['snr'])) + np.min(data_dict['snr'])
+    # fps = fps/np.max(fps) * (np.max(data_dict['snr']) - np.min(data_dict['snr']))
+    #                          + np.min(data_dict['snr'])
     ax2.plot(fps_times, fps, colors[2])
     fps_bin = [np.sign(x-1) for x in fps]
     steps = [fps_bin[idx]+fps_bin[idx+1] for idx in range(len(fps_bin)-1)]
@@ -306,11 +327,12 @@ def snr_plot(data_dict):
 def get_fixed_infos(folders, axs):
     nn_data_fast = []
     decays = []
+    cut_off_times = []
     for folder in folders:
         filelist = sorted(glob.glob(folder + '*_crop.ome.tif'))
 
-        for file in filelist:
-            img_range = range(240) #510 for fast
+        for idx, file in enumerate(filelist):
+            img_range = range(240)  # 510 for fast
             print(file)
             nn_file = file[:-8] + '_nn.ome.tif'
             cropped_file = file[:-8] + '_crop.ome.tif'
@@ -326,7 +348,7 @@ def get_fixed_infos(folders, axs):
                 # NNio.cropOMETiff(file, cropped_file, cropFrame=np.max(img_range)+1, cropRect=True)
                 # file = cropped_file
                 nn_file = file[:-8] + '_nn.ome.tif'
-                cropped_file = file #[:-8] + '_crop.ome.tif'
+                cropped_file = file  # [:-8] + '_crop.ome.tif'
                 json_file = file[:-8] + '_json.txt'
 
             # first, calculate the NN frames that we will need for the analysis
@@ -343,16 +365,15 @@ def get_fixed_infos(folders, axs):
                 data_dict['times'] = times
             times = data_dict['times']
 
-            if not "snr" in data_dict.keys():
+            if "snr" not in data_dict.keys():
                 snr, bleaching = get_snr(mito)
                 data_dict['snr'] = snr
                 data_dict['bleaching'] = bleaching
             else:
                 snr = data_dict['snr']
 
-
             # what is the nn output for these frames?
-            if not "nn" in data_dict.keys():
+            if "nn" not in data_dict.keys():
                 nn_data = []
                 nn = tifffile.imread(nn_file)
                 for frame in range(nn.shape[0]):
@@ -361,29 +382,34 @@ def get_fixed_infos(folders, axs):
             else:
                 nn_data = data_dict['nn']
 
-            # save all data we have obtained to a json file so we don't have to recalculate next time
-            with open(json_file,'w') as out_file:
+            # save all data we have obtained to a json file so we don't have to recalculate next
+            # time
+            with open(json_file, 'w') as out_file:
                 json.dump(data_dict, out_file)
             nn_data_fast.extend(nn_data)
 
             color = 1 if "fast" in file else 0
 
             # Calculate the decay parameter for the signal to noise data
-            times_decay = np.divide(data_dict['times'],10_000)
+            times_decay = np.divide(data_dict['times'], 10_000)
             times_decay = list(times_decay-np.min(times_decay))
-            bleaching_decay = list(np.divide(data_dict['bleaching'],data_dict['bleaching'][0]))
+            bleaching_decay = list(np.divide(data_dict['bleaching'], data_dict['bleaching'][0]))
 
 
-            ### Checking the Fit
-            # plt.plot(times, bleaching, color=colors[color])
+            # ## Checking the Fit
+            # plt.show()
+            # plt.plot(times_decay, bleaching_decay, color=colors[color])
             # # plt.show()
+            if idx == 0 and 'fast' not in file:
+                bleaching_decay[94] = 0.8  # Correct spike
+
             params, _ = optimize.curve_fit(exp_func, times_decay, bleaching_decay, maxfev=1000)
             decays.append(params[1])
             # A, K, C = params
-            # plt.plot(times, exp_func(np.array(times), A, K, C), color=colors[color])
-            # # plt.show()
+            # plt.plot(times_decay, exp_func(np.array(times_decay), A, K, C), color=colors[color])
+            # plt.show()
 
-            ### SNR plot
+            # ## SNR plot
             # fig, ax = plt.subplots()
             # fps, fps_times = make_fps(data_dict['times'][1:])
             # plt.plot(np.divide(data_dict['times'],1000), data_dict['snr'], color='#002b36')
@@ -393,10 +419,22 @@ def get_fixed_infos(folders, axs):
 
             # plt.plot(times, snr)
             # plt.show()
+            cut_off_time = calc_cutoff_time(params)
+            cut_off_times.append(cut_off_time)
+            # print(params, cut_off_time)
 
             times = times - np.min(times)
+
+            if NORMALIZED_SNR_CUTOFF:
+                snr = snr/np.max(snr)+1
+            else:
+                snr = data_dict['snr']
             snr_cutoff_frame = np.sum([x > 1.1 for x in snr])
-            print('SNR cutoff:', times[snr_cutoff_frame-1])
+
+            # plt.plot(times, snr)
+            # plt.show()
+            # print('SNR cutoff:', times[snr_cutoff_frame-1])
+            # print('full: ', times[-1])
             axs[0].plot(np.divide(times[:snr_cutoff_frame], TIME_ADJUST),
                         np.cumsum(nn_data)[:snr_cutoff_frame],
                         color=colors[color])
@@ -404,7 +442,11 @@ def get_fixed_infos(folders, axs):
                         np.cumsum(np.ones(len(times))),
                         color=colors[color])
             # nn_data_fast.append(np.mean(nn_data))
-    return nn_data_fast, decays
+    return nn_data_fast, decays, cut_off_times
+
+
+def calc_cutoff_time(params):
+    return np.log(params[0]/(0.9-params[2]))/params[1]
 
 
 def exp_func(t, A, K, C):

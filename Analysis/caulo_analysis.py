@@ -24,8 +24,9 @@ mpl.rcParams.update({"axes.prop_cycle": cycler('color', colors)})
 cm = 1/2.54  # centimeters in inches
 fig_size = (4*cm, 5*cm)
 
-
-output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/Figure3_caulo/"
+# Maybe 2, 3, 4
+LIGHT_EXP_LIST = [0, 1, 2, 4, 5]
+output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/Figure2_combined/archive/"
 VERTICAL_MODE = True
 PLOT_MODE = 'vert' if VERTICAL_MODE else 'hor'
 fig_size = (4*cm, 5*cm) if VERTICAL_MODE else (6*cm, 4*cm)
@@ -51,10 +52,10 @@ def main():
 
     # Plotting of the cum_info versus time will be done inside the functions to limit outputs
     # Get the width from inside the ats function to enable filter for high/low fps
-    fast_info, fast_decay = analyse_fast_data(axs)
-    slow_info, slow_decay = analyse_slow_data(axs)
+    fast_info, fast_decay, fast_cutoff = analyse_fast_data(axs)
+    slow_info, slow_decay, slow_cutoff = analyse_slow_data(axs)
 
-    high_info, low_info, ats_width, ats_decay = analyse_ats_data(axs)
+    high_info, low_info, ats_width, ats_decay, ats_cutoff = analyse_ats_data(axs)
     ats_info = high_info + low_info
 
     # ### MEAN INFO PLOT
@@ -69,7 +70,7 @@ def main():
         _, ax = plt.subplots()
 
     plt.boxplot(data, labels=labels, showfliers=False, whis=[5, 95])
-    violin.violin_overlay(data)
+    violin.violin_overlay(data, params={'s': 1, 'alpha': 0.5})
     annotate.significance_brackets([(0,2), (3, 4)])
     plt.ylabel('Information per Frame [AU]')
     # plt.title("Caulobacter EDA")
@@ -110,6 +111,10 @@ def main():
     print('bleaching decay fast/EDA: ', np.mean(fast_decay)/np.mean(ats_decay))
     print('bleaching decay EDA/slow: ', np.mean(ats_decay)/np.mean(slow_decay))
 
+    print('Imaging Times:')
+    print(f'eda/fast: {np.nanmean(ats_cutoff)/np.nanmean(fast_cutoff)},' +
+          f'slow/eda: {np.nanmean(slow_cutoff)/np.nanmean(ats_cutoff)}')
+
     # ### CUMSUM and CUMINFO plots
     plots.mini_panel(axs, 'h', vert=VERTICAL_MODE)
 
@@ -134,6 +139,7 @@ def analyse_slow_data(axs):
     folders = slow_folders
     info_all = []
     decay_all = []
+    cutoff_all = []
     for folder in folders:
         print(folder)
         files, _ = get_files(folder)
@@ -141,7 +147,9 @@ def analyse_slow_data(axs):
         snr, _ = get_snr(files['network'],  rect=[50, 974, 50, 974])
         # fig, ax1 = plt.subplots()
         snr_decay = get_snr_fast(files['network'], rect=[50, 974, 50, 974])
-        decay_all.append(get_decay(times, snr_decay))
+        decay, cutoff = get_decay(times, snr_decay)
+        decay_all.append(decay)
+        cutoff_all.append(cutoff)
 
         info = get_info(files['nn'], times)
         info_all.extend(info)
@@ -153,7 +161,7 @@ def analyse_slow_data(axs):
         times = times[1:snr_cutoff_frame+1]
         light_exp_plot(axs[0], times, 0, 1)
 
-    return info_all, decay_all
+    return info_all, decay_all, cutoff_all
 
 
 def analyse_fast_data(axs):
@@ -161,6 +169,7 @@ def analyse_fast_data(axs):
     folders = fast_folders
     info_all = []
     decay_all = []
+    cutoff_all = []
     for folder in folders:
         print(folder)
         files, _ = get_files(folder)
@@ -168,7 +177,9 @@ def analyse_fast_data(axs):
         times = get_times(files['peaks'])
 
         # Calculate the decay constant from the SNR
-        decay_all.append(get_decay(times[1:], snr[1:]))
+        decay, cutoff = get_decay(times[1:], snr[1:])
+        decay_all.append(decay)
+        cutoff_all.append(cutoff)
 
         # fig, ax1 = plt.subplots()
         # ax1.plot(times[1:], snr[1:], color=plt.rcParams['axes.prop_cycle'].by_key()['color'][1])#, color = COLORS['slow'])
@@ -184,7 +195,7 @@ def analyse_fast_data(axs):
                     np.cumsum(info[:len(times[1:snr_cutoff_frame+1])]), color=colors[1], alpha=0.8)
         times = times[1:snr_cutoff_frame+1]
         light_exp_plot(axs[0], times, 1, 1)
-    return info_all, decay_all
+    return info_all, decay_all, cutoff_all
 
 
 def analyse_ats_data(axs):
@@ -197,7 +208,8 @@ def analyse_ats_data(axs):
     high_width_all = []
     low_width_all = []
     decay_all = []
-    for folder in folders:
+    cutoff_all = []
+    for idx, folder in enumerate(folders):
         print(folder)
         files, _ = get_files(folder)
 
@@ -212,7 +224,9 @@ def analyse_ats_data(axs):
         fps, fps_times = make_fps(times[1:], unit='h')
 
         snr_decay = get_snr_fast(files['network'], rect=[50, 974, 50, 974])
-        decay_all.append(get_decay(times, snr_decay))
+        decay, cutoff = get_decay(times, snr_decay)
+        decay_all.append(decay)
+        cutoff_all.append(cutoff)
 
         # #Let's plot this data
         # fig, ax1 = plt.subplots()
@@ -260,18 +274,23 @@ def analyse_ats_data(axs):
         axs[1].plot(times[1:snr_cutoff_frame+1],
                     np.cumsum(info[:len(times[1:snr_cutoff_frame+1])]), color=colors[2])
         times = times[1:snr_cutoff_frame+1]
-        light_exp_plot(axs[0], times, 2)
+
+        if idx in LIGHT_EXP_LIST:
+            light_exp_plot(axs[0], times, 2)
+            plt.title(idx)
+            # plt.show()
 
     all_width = {'all': low_width_all + high_width_all,
                  'high': high_width_all,
                  'low':  low_width_all}
 
-    return high_info_all, low_info_all, all_width, decay_all
+    return high_info_all, low_info_all, all_width, decay_all, cutoff
 
 
 def light_exp_plot(ax, times, color, zorder=0):
     if len(times) > 3:
         times = times - np.min(times)
+        # plt.show()
         ax.plot(times, np.cumsum(np.ones_like(times)), color=colors[color], zorder=zorder)
 
 
@@ -300,21 +319,21 @@ def get_snr_fast(filelist, rect=None):
     """ Get the mask just from the first image and reuse it for all frames. As the imaging is fast,
     the position of the bacteria should not change much."""
     if os.path.isfile(filelist[0]):
-        image = cv2.imread(filelist[0],-1)
+        image = cv2.imread(filelist[0], -1)
     else:
         image = filelist[0]
 
     if rect is not None:
         image = image[rect[0]:rect[1], rect[2]:rect[3]]
-    blur = cv2.GaussianBlur(image, (5,5), 0)
+    blur = cv2.GaussianBlur(image, (5, 5), 0)
     blur = cv2.medianBlur(blur, 5)
-    ret3, mask = cv2.threshold(blur,0,1,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    ret3, mask = cv2.threshold(blur, 0, 1, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     invert_mask = cv2.bitwise_not(mask).astype(np.bool)
     mask = mask.astype(np.bool)
     snr = []
     for file in filelist:
         if os.path.isfile(file):
-            image = cv2.imread(file,-1)
+            image = cv2.imread(file, -1)
         else:
             image = file
 
@@ -325,6 +344,10 @@ def get_snr_fast(filelist, rect=None):
         mean_noise = np.mean(image[invert_mask])
         snr.append(mean_signal/mean_noise)
     return snr
+
+
+def calc_cutoff_time(params):
+    return np.log(params[0]/(0.9-params[2]))/params[1]
 
 
 if __name__ == "__main__":

@@ -62,6 +62,8 @@ caulo_folders = {
 }
 
 
+# MITO data
+
 slow_folder = '//lebnas1.epfl.ch/microsc125/iSIMstorage/Users/Dora/20201202_smartTest/analysis/'
 slow_samples = ["cell0/", "cell3/", "cell4/"]
 slow_folders = [slow_folder + sample for sample in slow_samples]
@@ -78,9 +80,6 @@ ats_samples = ['201208_cell_Int0s_30pc_488_50pc_561_band_6',
                '201208_cell_Int0s_30pc_488_50pc_561_band_5',
                '201208_cell_Int0s_30pc_488_50pc_561_band_10']
 ats_folders = [ats_folder + sample for sample in ats_samples]
-
-
-figure_1 = ''
 
 mito_folders = {
     'slow': slow_folders,

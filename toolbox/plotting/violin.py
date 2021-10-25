@@ -22,7 +22,7 @@ def get_violin_x(data, offset, spread=0.4, relativ_hist=True, bins=20):
     hist_data, edges = np.histogram(data, bins=bins)
     hist_data_abs = hist_data
     if relativ_hist:
-        hist_data = np.divide(hist_data,np.max(hist_data))
+        hist_data = np.divide(hist_data, np.max(hist_data))
     else:
         spread = 1/300
 
@@ -30,9 +30,9 @@ def get_violin_x(data, offset, spread=0.4, relativ_hist=True, bins=20):
         bin_num = len(edges[edges < value])-1
         x.append((np.random.random(1)-0.5)*spread*hist_data[bin_num]+offset)
 
-    #set alpha from the space over which the data is spread out
+    # set alpha from the space over which the data is spread out
     ylim = plt.gca().get_ylim()
     height = 1 - (edges[1] - edges[0])/(ylim[1] - ylim[0])
     num_points = np.max(hist_data_abs)
-    alpha = 1/(np.max([1,num_points/10]))*height
+    alpha = 1/(np.max([1, num_points/10]))*height
     return alpha, x

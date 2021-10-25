@@ -7,11 +7,12 @@ import mpl_toolkits.axisartist.floating_axes as floating_axes
 import numpy as np
 import mpl_toolkits.axisartist.angle_helper as angle_helper
 from matplotlib.projections import PolarAxes
+import matplotlib as mpl
 
 
 def mini_panel(axs, time_unit='min', vert=True):
-        ### Cum Info Plot
-    for  ax in axs:
+    # ## Cum Info Plot
+    for ax in axs:
         ax.set_xlim([0, ax.get_xlim()[1]])
         ax.set_ylim([0, ax.get_ylim()[1]])
         ax.minorticks_on()
@@ -34,7 +35,8 @@ def decay_plot(data, struct_type: str, fig_size, style, output_folder, colors, v
     box_dict = plt.boxplot(data, labels=labels, showfliers=False, whis=[5, 95], widths=0.5,
                            vert=vert)
     print(data)
-    violin.violin_overlay(data, spread=0, vert=vert)
+    violin.violin_overlay(data, spread=0, vert=vert, params={'s': 13, 'alpha': 0.6,
+                                                             'edgecolors': 'none'})
     # for index, item in enumerate(box_dict['boxes']):
     #     plt.setp(item, color=colors[index])
     # so it fits the size of the cumsum plot
@@ -62,6 +64,32 @@ def rotated_figure(rect=111):
 
     ax = ax1.get_aux_axes(tr)
     return ax
+
+
+def colorbar_plot():
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    from toolbox.plotting.style_mpl import set_mpl_style, set_mpl_font
+    style = "publication"
+    set_mpl_style(style)
+    set_mpl_font(size=9)
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+    f, ax = plt.subplots(1, 1, figsize=((2/2.54, 2.987/2.54)))
+
+    # create an axes on the right side of ax. The width of cax will be 5%
+    # of ax and the padding between cax and ax will be fixed at 0.05 inch.
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("left", size="10%", pad=0.05)
+
+    cb = plt.colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.Normalize(vmin=30, vmax=120),
+                                            cmap='viridis'), cax=cax)
+    cb.set_ticks([])
+    ax.set_visible(False)
+    plt.box(False)
+    cax.tick_params(length=0, labelsize=8)
+    plt.savefig("Y:/ATS_Figures/Figure1/panels/colorbar.pdf", transparent=True)
+    # plt.show()
+
 
 def main():
     ax = rotated_figure()

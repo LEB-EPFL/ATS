@@ -1,18 +1,19 @@
 import ctypes
-hllDll = ctypes.WinDLL("C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v11.2\\bin\\cusolver64_11.dll")
-from typing import Tuple
-from flowdec import data as fd_data
-from flowdec import restoration as fd_restoration
-from skimage import io
-from scipy import ndimage, signal
-import numpy as np
-import matplotlib.pyplot as plt
-from .prepare import prepare_decon
-from dataclasses import dataclass
-import cv2
+hllDll = ctypes.WinDLL("C:\\Program Files\\NVIDIA GPU Computing Toolkit" +
+                       "\\CUDA\\v11.2\\bin\\cusolver64_11.dll")
+from typing import Tuple  # noqa: E402
+from flowdec import data as fd_data  # noqa: E402
+from flowdec import restoration as fd_restoration  # noqa: E402
+from skimage import io  # noqa: E402
+from scipy import ndimage, signal  # noqa: E402
+import numpy as np  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+from .prepare import prepare_decon  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+import cv2  # noqa: E402
 
-import time
-import os
+import time  # noqa: E402
+import os  # noqa: E402
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 
@@ -44,16 +45,23 @@ class CudaParams():
     algo: fd_restoration.RichardsonLucyDeconvolver
     shape: Tuple[int] = (100, 100)
     ndim: int = 2
-    sigma: float = 3.8
+    sigma: float = 3.9/2.335
     prepared: bool = False
     background: float = 0.85
+    after_gaussian: float = 2
 
     def __init__(self, shape: Tuple[int] = shape, sigma: float = sigma, ndim: int = ndim,
-                 background: float = background):
+                 background: float = background, prepared: bool = prepared):
         super().__init__()
         self.background = background
         self.kernel = make_kernel(np.zeros(shape), sigma=sigma)
         self.algo = fd_restoration.RichardsonLucyDeconvolver(ndim).initialize()
+
+    def to_dict(self):
+        class_dict = {'sigma': self.sigma,
+                      'background': self.background,
+                      'after_gaussian': self.after_gaussian}
+        return class_dict
 
 
 def richardson_lucy(image, params=None, algo=None, kernel=None, prepared=True, background=None):
@@ -61,15 +69,15 @@ def richardson_lucy(image, params=None, algo=None, kernel=None, prepared=True, b
     if params is not None:
         algo, kernel, prepared = params.algo, params.kernel, params.prepared
         background = params.background
+        # print(params)
     else:
         if algo is None:
             algo = fd_restoration.RichardsonLucyDeconvolver(2).initialize()
         if kernel is None:
-            kernel = make_kernel(image, sigma=3.8)
+            kernel = make_kernel(image, sigma=3.9/2.355)
         if background is None:
             print('no background specified, using 0.85')
             background = 0.85
-
     if not prepared:
         image = prepare_decon(image, background)
     # print('sigma: ', kernel['sigma'])
