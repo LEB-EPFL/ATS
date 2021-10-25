@@ -38,7 +38,7 @@ cm = 1/2.54  # centimeters in inches
 TIME_ADJUST = 1_000*60
 INFO_ADJUST = 10_000
 
-output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/Figure2_mito/"
+output_folder = "//lebsrv2.epfl.ch/LEB_Perso/Willi-Stepp/ATS_Figures/Figure2_combined/archive/"
 VERTICAL_MODE = True
 PLOT_MODE = 'vert' if VERTICAL_MODE else 'hor'
 fig_size = (4*cm, 5*cm) if VERTICAL_MODE else (6*cm, 4*cm)
@@ -161,7 +161,7 @@ def info_analysis():
     plt.savefig(output_folder + "mito_decay_" + PLOT_MODE + ".pdf", transparent=True)
 
     print('bleaching decay fast/EDA: ', np.mean(fast_decay)/np.mean(ats_decay))
-
+    print('bleaching decay EDA/slow: ', np.mean(ats_decay)/np.mean(slow_decay))
 
     # P VALUES
     _, p_value = stats.ttest_ind(ats_high, ats_low)
