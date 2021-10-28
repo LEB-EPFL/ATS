@@ -12,8 +12,6 @@ The overall idea of this project is to adapt the imaging speed of a microscope t
 
 This will result in data with different framerates, which makes for an interesting problem for actually displaying the data. Hence NNGui.
 
-As of 16.04.2021 this is still work in progress. The goal is to get the feedback loop closer to the actual microscope, by implementing the microscope control directly in python.
-
 Some of the important settings are in ATS_settings.json. This was used to synchronize settings on different machines that were used to run the different files.
 
 ## Mito2Drp1
