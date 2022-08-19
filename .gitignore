@@ -5,3 +5,6 @@ settings.json
 tf2_4
 Tests
 *.code-workspace
+
+*.tif
+*.gif
